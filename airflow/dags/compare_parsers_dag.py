@@ -27,7 +27,8 @@ except ImportError as e:
         print(f"⚠️ Папка {shared_dir} не существует")
     raise
 
-API_KEY = "78f695dd4093ed73ad14db84433d9e17"  # ← ПОДСТАВЬ!
+# Берём ключ из переменных окружения контейнера
+API_KEY = os.getenv("OPENWEATHER_API_KEY", "")
 
 def sync_parse_cities(cities):
     """Синхронный парсинг (старый подход)"""
