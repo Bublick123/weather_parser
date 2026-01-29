@@ -1,0 +1,228 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:13
+    env_file:
+      - .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # НОВЫЙ СЕРВИС для инициализации БД
+  airflow-init:
+    build: ./airflow
+    command: >
+      bash -c "
+        until airflow db check; do
+          echo 'Waiting for database...';
+          sleep 5;
+        done;
+        airflow db init &&
+        airflow users create \
+          --username "${AIRFLOW_ADMIN_USERNAME}" \
+          --password "${AIRFLOW_ADMIN_PASSWORD}" \
+          --firstname "${AIRFLOW_ADMIN_FIRSTNAME}" \
+          --lastname "${AIRFLOW_ADMIN_LASTNAME}" \
+          --role Admin \
+          --email "${AIRFLOW_ADMIN_EMAIL}";
+        echo 'Airflow initialized!';
+      "
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+      AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
+      AIRFLOW__CELERY__RESULT_BACKEND: redis://redis:6379/0
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      MIN_AGE_MINUTES: ${MIN_AGE_MINUTES}
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./shared:/opt/airflow/shared
+      - ./logs:/opt/airflow/logs
+      - ./plugins:/opt/airflow/plugins
+
+  airflow-webserver:
+    build: ./airflow
+    command: webserver
+    depends_on:
+      - postgres
+      - redis
+      - airflow-init
+    env_file:
+      - .env
+    environment:
+      AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+      AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
+      AIRFLOW__CELERY__RESULT_BACKEND: redis://redis:6379/0
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth
+    ports:
+      - "${AIRFLOW_UI_PORT:-8001}:8080"
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./shared:/opt/airflow/shared
+      - ./logs:/opt/airflow/logs
+      - ./plugins:/opt/airflow/plugins
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  airflow-scheduler:
+    build: ./airflow
+    command: scheduler
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    env_file:
+      - .env
+    environment:
+      AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+      AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
+      AIRFLOW__CELERY__RESULT_BACKEND: redis://redis:6379/0
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      OPENWEATHER_API_KEY: ${OPENWEATHER_API_KEY}
+      MIN_AGE_MINUTES: ${MIN_AGE_MINUTES}
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./shared:/opt/airflow/shared
+      - ./logs:/opt/airflow/logs
+      - ./plugins:/opt/airflow/plugins
+    restart: on-failure
+
+  airflow-worker:
+    build: ./airflow
+    command: celery worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    env_file:
+      - .env
+    environment:
+      AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+      AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
+      AIRFLOW__CELERY__RESULT_BACKEND: redis://redis:6379/0
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      OPENWEATHER_API_KEY: ${OPENWEATHER_API_KEY}
+      MIN_AGE_MINUTES: ${MIN_AGE_MINUTES}
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./shared:/opt/airflow/shared
+      - ./logs:/opt/airflow/logs
+      - ./plugins:/opt/airflow/plugins
+    restart: on-failure
+
+  celery-worker-1:
+    build: ./celery_worker
+    command: celery -A tasks worker --loglevel=info --concurrency=3
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    env_file:
+      - .env
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      DATABASE_URL: ${DATABASE_URL}
+    volumes:
+      - ./shared:/app/shared
+    restart: on-failure
+
+  weather-frontend:
+    build: ./weather_frontend
+    container_name: weather-frontend
+    ports:
+      - "${FRONTEND_PORT:-8002}:8000"
+    command: uvicorn app:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ./weather_frontend:/app
+    env_file:
+      - .env
+    environment:
+      AIRFLOW_API_BASE: ${AIRFLOW_API_BASE}
+      AIRFLOW_USERNAME: ${AIRFLOW_API_USERNAME}
+      AIRFLOW_PASSWORD: ${AIRFLOW_API_PASSWORD}
+      DATABASE_URL: ${DATABASE_URL}
+    depends_on:
+      airflow-webserver:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: on-failure
+  ml-forecast:
+    build: ./ml_forecast
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./ml_forecast:/app
+      - ml_models:/app/models
+    
+    command: uvicorn api:app --host 0.0.0.0 --port 8000 --reload
+
+  telegram-bot:
+    build: ./telegram_bot
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-webserver:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      AIRFLOW_API_BASE: ${AIRFLOW_API_BASE}
+      AIRFLOW_USERNAME: ${AIRFLOW_API_USERNAME}
+      AIRFLOW_PASSWORD: ${AIRFLOW_API_PASSWORD}
+      DATABASE_URL: ${DATABASE_URL}
+    volumes:
+      - ./telegram_bot:/app      
+
+
+volumes:
+  postgres_data:
+  ml_models:
