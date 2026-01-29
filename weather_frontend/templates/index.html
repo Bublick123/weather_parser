@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Weather Parser | Управление</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/">Weather Parser</a>
+            <div class="navbar-nav">
+                <a class="nav-link active" aria-current="page" href="/">Главная</a>
+                <a class="nav-link" href="/results">Результаты</a>
+                <a class="nav-link" href="/monitor">Мониторинг</a>
+                <a class="nav-link" href="/forecast">Прогноз</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="text-center mb-5">
+            <h1 class="display-5 fw-bold mb-3" style="color: #2d3748;">🌤️ Weather Parser</h1>
+            <p class="lead text-muted">Управление парсингом погодных данных</p>
+        </div>
+
+        <div class="row g-4 justify-content-center">
+            <div class="col-md-8">
+                <div class="card shadow-sm">
+                    <div class="card-body text-center">
+                        <h5 class="card-title mb-4">🚀 Запуск парсинга</h5>
+                        <p class="text-muted mb-4">Запусти асинхронный парсинг погоды для всех городов</p>
+                        <button class="btn btn-success btn-lg px-5" onclick="triggerDag('async_weather_parser_dag')">
+                            ⚡ Запустить парсинг погоды
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-10">
+                <div class="card shadow-sm">
+                    <div class="card-body">
+                        <h5 class="card-title mb-3">ℹ️ Информация</h5>
+                        <ul class="list-unstyled mb-0">
+                            <li class="mb-2">📌 <strong>DAG:</strong> <code>async_weather_parser_dag</code></li>
+                            <li class="mb-2">🌍 <strong>Города:</strong> Челябинск, Ижевск, Москва, Санкт-Петербург,
+                                Краснодар, Гронинген</li>
+                            <li class="mb-2">⚡ <strong>Тип:</strong> Асинхронный парсинг (быстрый и эффективный)</li>
+                            <li class="mb-0">📊 Логи и статусы доступны в Airflow UI и на странице «Мониторинг»</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="alert-area" class="mt-4" style="display:none;">
+            <div class="alert" role="alert"></div>
+        </div>
+    </div>
+
+    <script>
+        async function triggerDag(dagId) {
+            setAlert('info', `Отправляю задачу ${dagId}...`);
+            try {
+                const resp = await fetch(`/trigger/${dagId}`, { method: 'POST' });
+                const data = await resp.json();
+                if (!resp.ok || data.error) {
+                    throw new Error(data.error || 'Ошибка запуска');
+                }
+                setAlert('success', `DAG ${dagId} запущен. run_id: ${data.response?.dag_run_id || 'см. Airflow'}`);
+            } catch (err) {
+                setAlert('danger', `Не удалось запустить ${dagId}: ${err.message}`);
+            }
+        }
+
+        function setAlert(type, message) {
+            const area = document.getElementById('alert-area');
+            const alert = area.querySelector('.alert');
+            alert.className = `alert alert-${type}`;
+            alert.textContent = message;
+            area.style.display = 'block';
+        }
+    </script>
+</body>
+
+</html>

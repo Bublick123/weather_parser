@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Weather Parser | Результаты</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/">Weather Parser</a>
+            <div class="navbar-nav">
+                <a class="nav-link" href="/">Главная</a>
+                <a class="nav-link active" aria-current="page" href="/results">Результаты</a>
+                <a class="nav-link" href="/monitor">Мониторинг</a>
+                <a class="nav-link" href="/forecast">Прогноз</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-3">
+            <div>
+                <h4 class="mb-1">📊 Последние записи</h4>
+                <p class="text-muted small mb-0">Данные о погоде из базы данных</p>
+            </div>
+            <div class="d-flex gap-2">
+                <input id="cityFilter" type="text" class="form-control" placeholder="🔍 Фильтр по городу"
+                    style="max-width: 220px;">
+                <button class="btn btn-outline-primary" onclick="fetchResults()">🔄 Обновить</button>
+            </div>
+        </div>
+
+        <div id="stats" class="mb-4"></div>
+
+        <div id="resultsContainer" class="row g-4">
+            <div class="col-12 text-center text-muted py-5">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Загрузка...</span>
+                </div>
+                <p class="mt-3 mb-0">Загрузка данных...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let timerId;
+
+        function getWeatherIcon(description) {
+            const desc = (description || '').toLowerCase();
+            if (desc.includes('ясн') || desc.includes('clear')) return '☀️';
+            if (desc.includes('облач') || desc.includes('cloud')) return '☁️';
+            if (desc.includes('дожд') || desc.includes('rain')) return '🌧️';
+            if (desc.includes('снег') || desc.includes('snow')) return '❄️';
+            if (desc.includes('туман') || desc.includes('fog') || desc.includes('mist')) return '🌫️';
+            if (desc.includes('гроза') || desc.includes('thunder')) return '⛈️';
+            return '🌤️';
+        }
+
+        function getTempColor(temp) {
+            if (temp === null || temp === undefined) return '#718096';
+            if (temp < 0) return '#4A90E2';      // Синий - холодно
+            if (temp < 10) return '#5B9BD5';     // Голубой - прохладно
+            if (temp < 20) return '#70AD47';     // Зелёный - нормально
+            if (temp < 30) return '#FFC000';     // Жёлтый - тепло
+            return '#FF6B6B';                     // Красный - жарко
+        }
+
+        function formatTime(dateString) {
+            if (!dateString) return '-';
+            const date = new Date(dateString);
+            const now = new Date();
+            const diffMs = now - date;
+            const diffMins = Math.floor(diffMs / 60000);
+
+            if (diffMins < 1) return 'только что';
+            if (diffMins < 60) return `${diffMins} мин назад`;
+            const diffHours = Math.floor(diffMins / 60);
+            if (diffHours < 24) return `${diffHours} ч назад`;
+            return date.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+        }
+
+        function renderRows(items) {
+            const container = document.getElementById('resultsContainer');
+            if (!items.length) {
+                container.innerHTML = `
+            <div class="col-12">
+                <div class="card text-center py-5">
+                    <div class="card-body">
+                        <h5 class="text-muted">📭 Нет данных</h5>
+                        <p class="text-muted mb-0">Данные о погоде пока не загружены</p>
+                    </div>
+                </div>
+            </div>
+        `;
+                return;
+            }
+
+            container.innerHTML = items.map(row => {
+                const temp = row.temperature;
+                const tempColor = getTempColor(temp);
+                const icon = getWeatherIcon(row.description);
+                const timeAgo = formatTime(row.created_at);
+
+                return `
+            <div class="col-md-6 col-lg-4">
+                <div class="weather-card card h-100">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start mb-3">
+                            <div>
+                                <h5 class="card-title mb-1 fw-bold">${row.city}</h5>
+                                <small class="text-muted">${timeAgo}</small>
+                            </div>
+                            <div class="weather-icon" style="font-size: 2.5rem;">${icon}</div>
+                        </div>
+                        
+                        <div class="temperature-display mb-3" style="color: ${tempColor};">
+                            <div class="d-flex align-items-baseline">
+                                <span class="display-4 fw-bold">${temp !== null && temp !== undefined ? Math.round(temp) : '-'}</span>
+                                <span class="fs-5 ms-2">°C</span>
+                            </div>
+                        </div>
+                        
+                        <div class="weather-description mb-3">
+                            <span class="badge bg-light text-dark px-3 py-2">${row.description || 'Нет данных'}</span>
+                        </div>
+                        
+                        <div class="weather-details">
+                            <div class="row g-2 small">
+                                <div class="col-6">
+                                    <div class="detail-item">
+                                        <span class="text-muted">💧 Влажность:</span>
+                                        <strong>${row.humidity !== null && row.humidity !== undefined ? row.humidity + '%' : '-'}</strong>
+                                    </div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="detail-item">
+                                        <span class="text-muted">📊 Давление:</span>
+                                        <strong>${row.pressure !== null && row.pressure !== undefined ? row.pressure + ' hPa' : '-'}</strong>
+                                    </div>
+                                </div>
+                                ${row.wind_speed ? `
+                                <div class="col-6">
+                                    <div class="detail-item">
+                                        <span class="text-muted">💨 Ветер:</span>
+                                        <strong>${row.wind_speed} м/с</strong>
+                                    </div>
+                                </div>
+                                ` : ''}
+                                ${row.clouds !== null && row.clouds !== undefined ? `
+                                <div class="col-6">
+                                    <div class="detail-item">
+                                        <span class="text-muted">☁️ Облачность:</span>
+                                        <strong>${row.clouds}%</strong>
+                                    </div>
+                                </div>
+                                ` : ''}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+            }).join('');
+        }
+
+        async function fetchResults() {
+            const city = document.getElementById('cityFilter').value.trim();
+            const qs = city ? `?city=${encodeURIComponent(city)}` : '';
+            try {
+                const resp = await fetch(`/api/results${qs}`);
+                const data = await resp.json();
+                renderRows(data.items || []);
+                document.getElementById('stats').innerHTML =
+                    `<strong>📊 Статистика:</strong> Отображено: <strong>${data.count}</strong> | Всего записей: <strong>${data.total_records}</strong> | Уникальных городов: <strong>${data.unique_cities}</strong>`;
+            } catch (err) {
+                renderRows([]);
+                document.getElementById('stats').textContent = 'Ошибка загрузки данных';
+            }
+        }
+
+        function startAutoRefresh() {
+            if (timerId) clearInterval(timerId);
+            timerId = setInterval(fetchResults, 10000);
+        }
+
+        document.getElementById('cityFilter').addEventListener('input', () => {
+            fetchResults();
+        });
+
+        fetchResults();
+        startAutoRefresh();
+    </script>
+</body>
+
+</html>

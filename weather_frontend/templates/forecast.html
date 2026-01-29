@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Weather Parser | Прогноз</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="/">Weather Parser</a>
+        <div class="navbar-nav">
+            <a class="nav-link" href="/">Главная</a>
+            <a class="nav-link" href="/results">Результаты</a>
+            <a class="nav-link" href="/monitor">Мониторинг</a>
+            <a class="nav-link active" aria-current="page" href="/forecast">Прогноз</a>
+        </div>
+    </div>
+</nav>
+
+<div class="container">
+    <div class="text-center mb-5">
+        <h1 class="display-5 fw-bold mb-3" style="color: #2d3748;">🔮 Прогноз погоды</h1>
+        <p class="lead text-muted">ML прогноз на основе исторических данных</p>
+    </div>
+
+    <div class="row justify-content-center mb-5">
+        <div class="col-md-6">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <form id="forecast-form" onsubmit="getForecast(event)">
+                        <div class="mb-3">
+                            <label for="city" class="form-label">Город</label>
+                            <input type="text" class="form-control" id="city" placeholder="Например: Moscow" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100">Получить прогноз</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="loading" class="text-center" style="display: none;">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Загрузка...</span>
+        </div>
+        <p class="mt-2 text-muted">Анализирую данные...</p>
+    </div>
+
+    <div id="result-area" style="display: none;">
+        <div class="row justify-content-center">
+            <div class="col-md-8">
+                <div class="card shadow border-0">
+                    <div class="card-header bg-primary text-white text-center py-3">
+                        <h4 class="mb-0" id="res-city">Москва</h4>
+                    </div>
+                    <div class="card-body p-4">
+                        <div class="row text-center mb-4">
+                            <div class="col-6 border-end">
+                                <p class="text-muted mb-1">Сейчас</p>
+                                <h2 class="fw-bold" id="res-current">--°C</h2>
+                            </div>
+                            <div class="col-6">
+                                <p class="text-muted mb-1">Прогноз на завтра</p>
+                                <h2 class="fw-bold text-primary" id="res-prediction">--°C</h2>
+                            </div>
+                        </div>
+                        
+                        <div class="alert alert-light border" role="alert">
+                            <h5 class="alert-heading">📊 Анализ тренда</h5>
+                            <p class="mb-0" id="res-trend">--</p>
+                            <hr>
+                            <p class="mb-0 small text-muted" id="res-pattern">--</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="error-area" class="alert alert-danger mt-4" style="display: none;"></div>
+</div>
+
+<script>
+async function getForecast(event) {
+    event.preventDefault();
+    const city = document.getElementById('city').value;
+    
+    document.getElementById('loading').style.display = 'block';
+    document.getElementById('result-area').style.display = 'none';
+    document.getElementById('error-area').style.display = 'none';
+    
+    try {
+        const resp = await fetch(`/api/forecast?city=${encodeURIComponent(city)}`);
+        const data = await resp.json();
+        
+        if (!resp.ok) {
+            throw new Error(data.error || 'Ошибка получения прогноза');
+        }
+        
+        // Заполняем данные
+        document.getElementById('res-city').textContent = data.city;
+        document.getElementById('res-current').textContent = `${data.current_temp}°C`;
+        document.getElementById('res-prediction').textContent = `${data.prediction}°C`;
+        
+        const trendDir = data.trend.direction === 'up' ? '📈 Потепление' : 
+                        (data.trend.direction === 'down' ? '📉 Похолодание' : '➡️ Стабильно');
+        document.getElementById('res-trend').textContent = `${trendDir} (изменение ${data.trend.change > 0 ? '+' : ''}${data.trend.change}°C)`;
+        document.getElementById('res-pattern').textContent = `Характер погоды: ${data.pattern}`;
+        
+        document.getElementById('result-area').style.display = 'block';
+    } catch (err) {
+        const errDiv = document.getElementById('error-area');
+        errDiv.textContent = err.message;
+        errDiv.style.display = 'block';
+    } finally {
+        document.getElementById('loading').style.display = 'none';
+    }
+}
+</script>
+</body>
+</html>

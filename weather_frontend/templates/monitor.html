@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Weather Parser | Мониторинг</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/">Weather Parser</a>
+            <div class="navbar-nav">
+                <a class="nav-link" href="/">Главная</a>
+                <a class="nav-link" href="/results">Результаты</a>
+                <a class="nav-link active" aria-current="page" href="/monitor">Мониторинг</a>
+                <a class="nav-link" href="/forecast">Прогноз</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-3">
+            <div>
+                <h4 class="mb-1">📈 Мониторинг DAG'ов</h4>
+                <p class="text-muted small mb-0">Статусы и метрики выполнения задач</p>
+            </div>
+            <button class="btn btn-outline-primary" onclick="fetchMonitor()">🔄 Обновить</button>
+        </div>
+
+        <div id="dataStats" class="mb-3"></div>
+
+        <div class="table-responsive">
+            <table class="table table-sm align-middle table-striped" id="monitorTable">
+                <thead class="table-light">
+                    <tr>
+                        <th>DAG</th>
+                        <th>Run ID</th>
+                        <th>Статус</th>
+                        <th>Старт</th>
+                        <th>Финиш</th>
+                        <th>Длительность, c</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td colspan="6" class="text-center text-muted">Загрузка...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        let monitorTimer;
+
+        function badgeClass(state) {
+            switch ((state || '').toLowerCase()) {
+                case 'success': return 'bg-success';
+                case 'running': return 'bg-primary';
+                case 'queued': return 'bg-warning text-dark';
+                case 'failed': return 'bg-danger';
+                default: return 'bg-secondary';
+            }
+        }
+
+        function renderMonitor(data) {
+            const tbody = document.querySelector('#monitorTable tbody');
+            const rows = [];
+            (data.dags || []).forEach(dag => {
+                if (!dag.runs || !dag.runs.length) {
+                    rows.push(`<tr><td>${dag.dag_id}</td><td colspan="5" class="text-muted">Нет запусков</td></tr>`);
+                    return;
+                }
+                dag.runs.forEach((run, idx) => {
+                    rows.push(`
+                <tr>
+                    ${idx === 0 ? `<td rowspan="${dag.runs.length}"><strong>${dag.dag_id}</strong></td>` : ''}
+                    <td>${run.run_id}</td>
+                    <td><span class="badge ${badgeClass(run.state)}">${run.state || 'unknown'}</span></td>
+                    <td>${run.start_date ? new Date(run.start_date).toLocaleString() : '-'}</td>
+                    <td>${run.end_date ? new Date(run.end_date).toLocaleString() : '-'}</td>
+                    <td>${run.duration_seconds != null ? run.duration_seconds.toFixed(1) : '-'}</td>
+                </tr>
+            `);
+                });
+            });
+            tbody.innerHTML = rows.join('') || '<tr><td colspan="6" class="text-center text-muted">Нет данных</td></tr>';
+
+            const stats = data.data_stats || {};
+            document.getElementById('dataStats').innerHTML =
+                `<strong>📊 Статистика данных:</strong> Всего записей: <strong>${stats.total_records ?? 0}</strong> | Уникальных городов: <strong>${stats.unique_cities ?? 0}</strong>`;
+        }
+
+        async function fetchMonitor() {
+            try {
+                const resp = await fetch('/api/monitor');
+                const data = await resp.json();
+                renderMonitor(data);
+            } catch (err) {
+                document.querySelector('#monitorTable tbody').innerHTML =
+                    '<tr><td colspan="6" class="text-center text-danger">Ошибка загрузки</td></tr>';
+            }
+        }
+
+        function startAutoRefresh() {
+            if (monitorTimer) clearInterval(monitorTimer);
+            monitorTimer = setInterval(fetchMonitor, 10000);
+        }
+
+        fetchMonitor();
+        startAutoRefresh();
+    </script>
+</body>
+
+</html>
